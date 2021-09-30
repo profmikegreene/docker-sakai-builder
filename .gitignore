@@ -5,6 +5,7 @@ work/tomcat/sakaihome/ignite
 work/Catalina
 work/mysql/data
 work/tomcat/deploy/logs/
+work/tomcat/sakaihome/spy.log
 work/.config
 work/.m2
 *.swp

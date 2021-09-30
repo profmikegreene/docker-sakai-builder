@@ -27,9 +27,9 @@ SAKAIHOME="${TOMCAT}/sakaihome"
 MAVEN_IMAGE="markhobson/maven-chrome:jdk-11"
 
 # This defaults to detroit timezone. Make this configurable
-TIMEZONE="America/Detroit"
+TIMEZONE="America/New_York"
 
-echo "WORK:$WORK TOMCAT:$TOMCAT DEPLOY:$DEPLOY WICKET_CONFIG:$WICKET_CONFIG"
+printf "WORK:$WORK\nTOMCAT:$TOMCAT\nDEPLOY:$DEPLOY\nWICKET_CONFIG:$WICKET_CONFIG\n"
 
 # Opts from SAK-33595 indicated for JDK11
 JDK11_OPTS="--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED --add-exports=java.base/sun.nio.ch=ALL-UNNAMED --add-exports=java.management/com.sun.jmx.mbeanserver=ALL-UNNAMED --add-exports=jdk.internal.jvmstat/sun.jvmstat.monitor=ALL-UNNAMED --add-exports=java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED --add-opens jdk.management/com.sun.management.internal=ALL-UNNAMED --illegal-access=permit"
@@ -47,11 +47,12 @@ start_tomcat() {
     fi
 
 	docker run -d --name=${CONTAINER_NAME} --pull always \
-	    -p 8080:8080 -p 8089:8089 -p 8000:8000 -p 8025:8025 \
+	    -p 80:8080 -p 8089:8089 -p 8000:8000 -p 8025:8025 \
 	    -e "CATALINA_BASE=/usr/src/app/deploy" \
 	    -e "CATALINA_TMPDIR=/tmp" \
 	    -e "JAVA_OPTS=-server -Xms1g -Xmx2g -Djava.awt.headless=true -XX:+UseCompressedOops -Dhttp.agent=Sakai -Dorg.apache.jasper.compiler.Parser.STRICT_QUOTE_ESCAPING=false” -Dsakai.home=/usr/src/app/deploy/sakai/ -Duser.timezone=${TIMEZONE} -Dsakai.cookieName=SAKAI2SESSIONID -Dsakai.demo=true -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=8089 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dwicket.configuration=${WICKET_CONFIG} ${JDK11_OPTS} ${JDK11_GC}" \
 	    -e "JPDA_ADDRESS=*:8000" \
+		-e "VIRTUAL_HOST=sakai.localhost" \
 	    -v "${DEPLOY}:/usr/src/app/deploy:cached" \
 	    -v "${SAKAIHOME}:/usr/src/app/deploy/sakai:cached" \
 	    -v "${TOMCAT}/catalina_base/bin:/usr/src/app/deploy/bin:cached" \
@@ -141,7 +142,7 @@ kill_all() {
 set +x
 
 # Defaults
-SAKAI_DEPLOY="sakai:deploy"
+SAKAI_DEPLOY="sakai:deploy-exploded"
 MAVEN_TEST_SKIP=true
 
 COMMAND=$1; shift
