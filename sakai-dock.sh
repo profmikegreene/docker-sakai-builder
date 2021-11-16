@@ -46,13 +46,15 @@ start_tomcat() {
     	docker stop ${CONTAINER_NAME} > /dev/null && docker rm ${CONTAINER_NAME} > /dev/null
     fi
 
+	# docker network create ${CONTAINER_NAME}
 	docker run -d --name=${CONTAINER_NAME} --pull always \
-	    -p 80:8080 -p 8089:8089 -p 8000:8000 -p 8025:8025 \
+	    -p 8080:8080 -p 8089:8089 -p 8000:8000 -p 8025:8025 \
 	    -e "CATALINA_BASE=/usr/src/app/deploy" \
 	    -e "CATALINA_TMPDIR=/tmp" \
 	    -e "JAVA_OPTS=-server -Xms1g -Xmx2g -Djava.awt.headless=true -XX:+UseCompressedOops -Dhttp.agent=Sakai -Dorg.apache.jasper.compiler.Parser.STRICT_QUOTE_ESCAPING=false” -Dsakai.home=/usr/src/app/deploy/sakai/ -Duser.timezone=${TIMEZONE} -Dsakai.cookieName=SAKAI2SESSIONID -Dsakai.demo=true -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=8089 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dwicket.configuration=${WICKET_CONFIG} ${JDK11_OPTS} ${JDK11_GC}" \
 	    -e "JPDA_ADDRESS=*:8000" \
 		-e "VIRTUAL_HOST=sakai.localhost" \
+		-e "VIRTUAL_PORT=8080" \
 	    -v "${DEPLOY}:/usr/src/app/deploy:cached" \
 	    -v "${SAKAIHOME}:/usr/src/app/deploy/sakai:cached" \
 	    -v "${TOMCAT}/catalina_base/bin:/usr/src/app/deploy/bin:cached" \
@@ -62,6 +64,8 @@ start_tomcat() {
 	    --link sakai-mariadb \
 	    tomcat:9-jdk11-openjdk-slim \
 	    /usr/local/tomcat/bin/catalina.sh jpda run || docker start ${CONTAINER_NAME}
+
+	docker network connect nginxproxy_default ${CONTAINER_NAME}
 }
 
 start_mariadb() {
@@ -96,6 +100,7 @@ start_bash() {
 }
 
 maven_build() {
+	echo $@
 	# If docker creates this directory it does it as the wrong user, so create it first
 	# These are on the host so they can be re-used between builds
 	mkdir -p "$DEPLOY/lib"
@@ -120,7 +125,7 @@ maven_build() {
 	    -u `id -u`:`id -g` \
 		--cap-add=SYS_ADMIN \
 	    -w /usr/src/app ${MAVEN_IMAGE} \
-	    /bin/bash -c "mvn -T ${THREADS} -B ${UPDATES} clean install ${SAKAI_DEPLOY} -Dmaven.test.skip=${MAVEN_TEST_SKIP} -Djava.awt.headless=true -Dmaven.tomcat.home=/usr/src/deploy -Dsakai.cleanup=true -Duser.home=/tmp/"
+	    /bin/bash -c "mvn -T ${THREADS} -B ${UPDATES} clean install ${SAKAI_DEPLOY} ${PROFILE} -Dmaven.test.skip=${MAVEN_TEST_SKIP} -Djava.awt.headless=true -Dmaven.tomcat.home=/usr/src/deploy -Dsakai.cleanup=true -Duser.home=/tmp/"
 }
 
 clean_deploy() {
@@ -147,17 +152,19 @@ MAVEN_TEST_SKIP=true
 
 COMMAND=$1; shift
 
-while getopts "tdUc" option; do
+while getopts "tdUcP" option; do
     case "${option}" in
     t) MAVEN_TEST_SKIP=false;;
     d) SAKAI_DEPLOY="";;
     U) UPDATES="-U";;
     c) MAVEN_IMAGE="sakai:build";;
+    P) PROFILE="-P$2";;
     *) echo "Incorrect options provided"; exit 1;;
     esac
 done
 
 #TODO Add some of these options (deploy, test skip, etc) as options
+
 case "$COMMAND" in
     tomcat)
 	    start_tomcat;;
@@ -172,7 +179,7 @@ case "$COMMAND" in
     clean_data)
     	clean_data;;
     bash)
-	start_bash;;
+		start_bash;;
     kill)
     	kill_all;;
     *)  
