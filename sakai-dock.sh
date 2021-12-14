@@ -24,7 +24,7 @@ DEPLOY="${TOMCAT}/deploy"
 SAKAIHOME="${TOMCAT}/sakaihome"
 
 # Which maven image to use
-MAVEN_IMAGE="markhobson/maven-chrome:jdk-11"
+MAVEN_IMAGE="markhobson/maven-chrome:jdk-8"
 
 # This defaults to detroit timezone. Make this configurable
 TIMEZONE="America/New_York"
@@ -38,7 +38,7 @@ JDK11_OPTS="--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED --add-exports=
 JDK11_GC="-Xlog:gc"
 
 start_tomcat() {
-    CONTAINER_NAME="sakai-tomcat"
+    CONTAINER_NAME="sakai-21-tomcat"
     CONTAINER_ID=$(docker inspect --format="{{.Id}}" ${CONTAINER_NAME} 2> /dev/null)
 
     if [[ "${CONTAINER_ID}" ]]; then
@@ -51,9 +51,9 @@ start_tomcat() {
 	    -p 8080:8080 -p 8089:8089 -p 8000:8000 -p 8025:8025 \
 	    -e "CATALINA_BASE=/usr/src/app/deploy" \
 	    -e "CATALINA_TMPDIR=/tmp" \
-	    -e "JAVA_OPTS=-server -Xms1g -Xmx2g -Djava.awt.headless=true -XX:+UseCompressedOops -Dhttp.agent=Sakai -Dorg.apache.jasper.compiler.Parser.STRICT_QUOTE_ESCAPING=false” -Dsakai.home=/usr/src/app/deploy/sakai/ -Duser.timezone=${TIMEZONE} -Dsakai.cookieName=SAKAI2SESSIONID -Dsakai.demo=true -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=8089 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dwicket.configuration=${WICKET_CONFIG} ${JDK11_OPTS} ${JDK11_GC}" \
-	    -e "JPDA_ADDRESS=*:8000" \
-		-e "VIRTUAL_HOST=sakai.localhost" \
+	    -e "JAVA_OPTS=-server -d64 -Xms1g -Xmx2g -Djava.awt.headless=true -XX:+UseCompressedOops -XX:+UseConcMarkSweepGC -XX:+DisableExplicitGC -Dhttp.agent=Sakai -Dorg.apache.jasper.compiler.Parser.STRICT_QUOTE_ESCAPING=false” -Dsakai.home=/usr/src/app/deploy/sakai/ -Duser.timezone=${TIMEZONE} -Dsakai.cookieName=SAKAI2SESSIONID -Dsakai.demo=true -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=8089 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dwicket.configuration=${WICKET_CONFIG}" \
+		-e "JPDA_ADDRESS=8000" \
+		-e "VIRTUAL_HOST=sakai-21.localhost" \
 		-e "VIRTUAL_PORT=8080" \
 	    -v "${DEPLOY}:/usr/src/app/deploy:cached" \
 	    -v "${SAKAIHOME}:/usr/src/app/deploy/sakai:cached" \
@@ -61,8 +61,8 @@ start_tomcat() {
 	    -v "${TOMCAT}/catalina_base/conf:/usr/src/app/deploy/conf:cached" \
 	    -v "${TOMCAT}/catalina_base/webapps/ROOT:/usr/src/app/deploy/webapps/ROOT:cached" \
 	    -u `id -u`:`id -g` \
-	    --link sakai-mariadb \
-	    tomcat:9-jdk11-openjdk-slim \
+	    --link sakai-21-mariadb \
+	    tomcat:9-jdk8-openjdk \
 	    /usr/local/tomcat/bin/catalina.sh jpda run || docker start ${CONTAINER_NAME}
 
 	docker network connect nginxproxy_default ${CONTAINER_NAME}
@@ -70,7 +70,7 @@ start_tomcat() {
 
 start_mariadb() {
 	mkdir -p "${WORK}/mysql/data"
-    CONTAINER_NAME="sakai-mariadb"
+    CONTAINER_NAME="sakai-21-mariadb"
     CONTAINER_ID=$(docker inspect --format="{{.Id}}" ${CONTAINER_NAME} 2> /dev/null)
 
     if [[ "${CONTAINER_ID}" ]]; then
@@ -113,7 +113,7 @@ maven_build() {
 	cp ${BASEDIR}/p6spy/p6spy-3.9.1.jar ${BASEDIR}/p6spy/spy.properties ${DEPLOY}/lib
 
 	# Now build the code
-	docker run --rm -it --pull always --name sakai-build \
+	docker run --rm -it --pull always --name sakai-build-21 \
 	    -e "MAVEN_OPTS=-XX:+TieredCompilation -XX:TieredStopAtLevel=1" \
 	    -e "MAVEN_CONFIG=/tmp/.m2" \
 	    -v "${DEPLOY}:/usr/src/deploy:delegated" \
@@ -125,9 +125,22 @@ maven_build() {
 	    -u `id -u`:`id -g` \
 		--cap-add=SYS_ADMIN \
 	    -w /usr/src/app ${MAVEN_IMAGE} \
-	    /bin/bash -c "mvn -T ${THREADS} -B ${UPDATES} clean install ${SAKAI_DEPLOY} ${PROFILE} -Dmaven.test.skip=${MAVEN_TEST_SKIP} -Djava.awt.headless=true -Dmaven.tomcat.home=/usr/src/deploy -Dsakai.cleanup=true -Duser.home=/tmp/"
+	    /bin/bash -c "mvn -T ${THREADS} -B ${UPDATES} clean install ${SAKAI_DEPLOY} ${PROFILE} ${FLAG} -Dmaven.test.skip=${MAVEN_TEST_SKIP} -Djava.awt.headless=true -Dmaven.tomcat.home=/usr/src/deploy -Dsakai.cleanup=true -Duser.home=/tmp/"
 }
 
+build_skins() {
+	# SKIN="duke-default"
+	# FLAG="-Dsakai.skin.customization.file=./src/morpheus-master/sass/_$SKIN.scss -Dsakai.skin.overrides.file=./src/morpheus-master/sass/_$SKIN-overrides.scss -Dsakai.skin.customization.js.lib=duke-lib.js -Dsakai.skin.customization.js.main=$SKIN.js -Dsakai.skin.target=$SKIN"
+	# maven_build
+
+	SKINS=( "duke-default" "duke-extend" "duke-alumni" "duke-crtp" "duke-dghi" "duke-divinity" "duke-dku" "duke-law" "duke-nursing" "duke-pratt" "duke-samsi" )
+	i=0;
+	while [ $i -lt ${#SKINS[*]} ]; do
+		FLAG="-Dsakai.skin.customization.file=./src/morpheus-master/sass/_${SKINS[$i]}.scss -Dsakai.skin.overrides.file=./src/morpheus-master/sass/_${SKINS[$i]}-overrides.scss -Dsakai.skin.customization.js.lib=duke-lib.js -Dsakai.skin.customization.js.main=${SKINS[$i]}.js -Dsakai.skin.target=${SKINS[$i]}"
+		maven_build
+		i=$(( i + 1));
+	done
+}
 clean_deploy() {
 	rm -rf $DEPLOY
 }
@@ -139,8 +152,8 @@ clean_data() {
 }
 
 kill_all() {
-	docker kill sakai-tomcat sakai-mariadb
-	docker rm sakai-tomcat sakai-mariadb
+	docker kill sakai-21-tomcat sakai-21-mariadb
+	docker rm sakai-21-tomcat sakai-21-mariadb
 }
 
 # Turn off command echo
@@ -152,14 +165,15 @@ MAVEN_TEST_SKIP=true
 
 COMMAND=$1; shift
 
-while getopts "tdUcP" option; do
+while getopts "tdUcPD" option; do
     case "${option}" in
     t) MAVEN_TEST_SKIP=false;;
     d) SAKAI_DEPLOY="";;
     U) UPDATES="-U";;
     c) MAVEN_IMAGE="sakai:build";;
     P) PROFILE="-P$2";;
-    *) echo "Incorrect options provided"; exit 1;;
+	D) FLAG="-Dsakai.skin.customization.file=./src/morpheus-master/sass/_$2.scss -Dsakai.skin.overrides.file=./src/morpheus-master/sass/_$2-overrides.scss -Dsakai.skin.customization.js.lib=duke-lib.js -Dsakai.skin.customization.js.main=$2.js -Dsakai.skin.target=$2";;
+	*) echo "Incorrect options provided"; exit 1;;
     esac
 done
 
@@ -174,6 +188,8 @@ case "$COMMAND" in
         start_mariadb;;
     build)
     	maven_build;;
+	build_skins)
+		build_skins;;
     clean_deploy)
     	clean_deploy;;
     clean_data)
